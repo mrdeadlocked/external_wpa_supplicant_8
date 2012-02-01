@@ -825,9 +825,15 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 					ssid_len = _res;
 				_ssid = ssid_buf;
 			}
-			ret = os_snprintf(pos, end - pos, "ssid=%s\nid=%d\n",
-					  wpa_ssid_txt(_ssid, ssid_len),
-					  ssid->id);
+			if (ssid->mode == IEEE80211_MODE_IBSS){
+				ret = os_snprintf(pos, end - pos, "ssid=%s%s\nid=%d\n",
+					"(*)", wpa_ssid_txt(_ssid, ssid_len),
+					  ssid->id);				
+			}
+			else
+				ret = os_snprintf(pos, end - pos, "ssid=%s\nid=%d\n",
+					wpa_ssid_txt(_ssid, ssid_len),
+					ssid->id);
 			if (ret < 0 || ret >= end - pos)
 				return pos - buf;
 			pos += ret;
@@ -1017,7 +1023,7 @@ static int wpa_supplicant_ctrl_iface_blacklist(struct wpa_supplicant *wpa_s,
 		end = buf + buflen;
 		e = wpa_s->blacklist;
 		while (e) {
-			ret = os_snprintf(pos, end-pos, MACSTR"\n", MAC2STR(e->bssid));
+			ret = os_snprintf(pos, end-pos, MACSTR "\n", MAC2STR(e->bssid));
 			if ((ret < 0) || (ret >= end - pos))
 				return pos - buf;
 			pos += ret;
@@ -1058,7 +1064,6 @@ static int wpa_supplicant_ctrl_iface_list_networks(
 	char *pos, *end;
 	struct wpa_ssid *ssid;
 	int ret;
-
 	pos = buf;
 	end = buf + buflen;
 	ret = os_snprintf(pos, end - pos,
@@ -1070,8 +1075,8 @@ static int wpa_supplicant_ctrl_iface_list_networks(
 	ssid = wpa_s->conf->ssid;
 	while (ssid) {
 		ret = os_snprintf(pos, end - pos, "%d\t%s",
-				  ssid->id,
-				  wpa_ssid_txt(ssid->ssid, ssid->ssid_len));
+			ssid->id,
+			wpa_ssid_txt(ssid->ssid, ssid->ssid_len));
 		if (ret < 0 || ret >= end - pos)
 			return pos - buf;
 		pos += ret;
@@ -1328,12 +1333,7 @@ static int wpa_supplicant_ctrl_iface_scan_result(
 			return -1;
 		pos += ret;
 	}
-	if (bss->caps & IEEE80211_CAP_IBSS) {
-		ret = os_snprintf(pos, end - pos, "[IBSS]");
-		if (ret < 0 || ret >= end - pos)
-			return -1;
-		pos += ret;
-	}
+	
 	if (bss->caps & IEEE80211_CAP_ESS) {
 		ret = os_snprintf(pos, end - pos, "[ESS]");
 		if (ret < 0 || ret >= end - pos)
@@ -1347,7 +1347,11 @@ static int wpa_supplicant_ctrl_iface_scan_result(
 		pos += ret;
 	}
 
-	ret = os_snprintf(pos, end - pos, "\t%s",
+	if (bss->caps & IEEE80211_CAP_IBSS) 
+		ret = os_snprintf(pos, end - pos, "\t%s%s", "(*)",
+			 wpa_ssid_txt(bss->ssid, bss->ssid_len));
+	else
+		ret = os_snprintf(pos, end - pos, "\t%s",
 			  wpa_ssid_txt(bss->ssid, bss->ssid_len));
 	if (ret < 0 || ret >= end - pos)
 		return -1;
@@ -1494,7 +1498,7 @@ static int wpa_supplicant_ctrl_iface_add_network(
 	int ret;
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE: ADD_NETWORK");
-
+	
 	ssid = wpa_config_add_network(wpa_s->conf);
 	if (ssid == NULL)
 		return -1;
@@ -1595,6 +1599,18 @@ static int wpa_supplicant_ctrl_iface_set_network(
 			   "id=%d", id);
 		return -1;
 	}
+	if (os_strcmp(name, "ssid") == 0) {
+		// check prefix
+		if ((value[0] == '"') && (os_strncmp(value+1, "(*)", 3) == 0)) {
+			if (wpa_config_set(ssid, "mode", "1", 0) < 0) {
+				wpa_printf(MSG_DEBUG, "CTRL_IFACE: failed to set IBSS on '%s'",
+					value);
+				return -1;
+			}
+			value += 3;
+			value[0] = '"';
+		}
+	}
 
 	if (wpa_config_set(ssid, name, value, 0) < 0) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE: Failed to set network "
@@ -1652,8 +1668,14 @@ static int wpa_supplicant_ctrl_iface_get_network(
 			   "variable '%s'", name);
 		return -1;
 	}
-
+	
+	if ((os_strcmp(name, "ssid") == 0) && (ssid->mode == IEEE80211_MODE_IBSS)){
+	
+		res = os_snprintf(buf, buflen, "\"%s%s", "(*)", value+1);
+	}
+	else	
 	res = os_strlcpy(buf, value, buflen);
+	
 	if (res >= buflen) {
 		os_free(value);
 		return -1;

@@ -592,7 +592,8 @@ static struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 			continue;
 		}
 
-		if (bss->caps & IEEE80211_CAP_IBSS) {
+		if (bss->caps & IEEE80211_CAP_IBSS
+			&& ssid->mode != IEEE80211_MODE_IBSS) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "   skip - IBSS (adhoc) "
 				"network");
 			continue;
@@ -642,6 +643,7 @@ wpa_supplicant_select_bss(struct wpa_supplicant *wpa_s,
 			continue;
 
 		ie = wpa_scan_get_ie(bss, WLAN_EID_SSID);
+	
 		ssid = ie ? ie + 2 : (u8 *) "";
 		ssid_len = ie ? ie[1] : 0;
 
